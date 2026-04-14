@@ -64,7 +64,7 @@ export function registerAllTools(server) {
     { matter_id: z.number(), quantity: z.number().describe("Hours in 0.1 increments"), date: z.string().describe("YYYY-MM-DD"), note: z.string().describe("Narrative"), user_id: z.number().optional() },
     async ({ matter_id, quantity, date, note, user_id }) => {
       const r = Math.round(quantity * 10) / 10;
-      const b = { data: { type: "TimeEntry", quantity: r, date, note, matter: { id: matter_id } } };
+      const b = { data: { type: "TimeEntry", quantity: r * 3600, date, note, matter: { id: matter_id } } };
       if (user_id) b.data.user = { id: user_id };
       const d = await clio.post("/activities.json", b);
       return { content: [{ type: "text", text: JSON.stringify({ created: true, id: d.data.id, matter_id, quantity: r, date, note }, null, 2) }] };
