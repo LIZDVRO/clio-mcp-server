@@ -98,12 +98,13 @@ export function registerAllTools(server) {
       return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, tasks: d.data }, null, 2) }] };
     });
 
+  // FIX #1: Added type: 'User' to assignee object (Clio API requires assignee_type)
   server.tool("clio_create_task", "Create a task linked to a matter.",
-    { name: z.string().describe("Task name"), matter_id: z.number(), description: z.string().optional(), due_at: z.string().optional().describe("YYYY-MM-DD"), priority: z.enum(["Low","Normal","High"]).optional(), assignee_id: z.number().optional() },
+    { name: z.string().describe("Task name"), matter_id: z.number(), description: z.string().optional(), due_at: z.string().optional().describe("YYYY-MM-DD"), priority: z.enum(["Low","Normal","High"]).optional(), assignee_id: z.number().optional().describe("User ID of the assignee") },
     async ({ name, matter_id, description, due_at, priority, assignee_id }) => {
       const b = { data: { name, description: description || "", status: "pending", priority: priority || "Normal", matter: { id: matter_id } } };
       if (due_at) b.data.due_at = due_at;
-      if (assignee_id) b.data.assignee = { id: assignee_id };
+      if (assignee_id) b.data.assignee = { id: assignee_id, type: "User" };
       const d = await clio.post("/tasks.json", b);
       return { content: [{ type: "text", text: JSON.stringify(d.data, null, 2) }] };
     });
@@ -115,19 +116,33 @@ export function registerAllTools(server) {
       return { content: [{ type: "text", text: "Task " + task_id + " completed." }] };
     });
 
-  server.tool("clio_list_calendar", "List upcoming calendar entries.",
-    { matter_id: z.number().optional(), limit: z.number().optional() },
-    async ({ matter_id, limit }) => {
-      const p = { fields: "id,summary,description,start_at,end_at,all_day,location,matter{id,display_number}", limit: limit || 50, order: "start_at(asc)" };
+  // NEW TOOL: List available calendars to discover calendar IDs
+  server.tool("clio_list_calendars", "List all available calendars (needed to get calendar_owner IDs for creating entries).",
+    { limit: z.number().optional() },
+    async ({ limit }) => {
+      const p = { fields: "id,name,color,light_color,owner{id,name}", limit: limit || 50 };
+      const d = await clio.get("/calendars.json", p);
+      return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, calendars: d.data }, null, 2) }] };
+    });
+
+  // FIX #2: Added from/to date filters and calendar_owner_id to prevent 500 errors
+  server.tool("clio_list_calendar", "List calendar entries. Use from/to dates to avoid errors.",
+    { matter_id: z.number().optional(), calendar_owner_id: z.number().optional().describe("Calendar ID from clio_list_calendars"), from: z.string().optional().describe("Start date YYYY-MM-DD"), to: z.string().optional().describe("End date YYYY-MM-DD"), limit: z.number().optional() },
+    async ({ matter_id, calendar_owner_id, from, to, limit }) => {
+      const p = { fields: "id,summary,description,start_at,end_at,all_day,location,matter{id,display_number},calendar_owner{id,name}", limit: limit || 50, order: "start_at(asc)" };
       if (matter_id) p.matter_id = matter_id;
+      if (calendar_owner_id) p.calendar_owner_id = calendar_owner_id;
+      if (from) p.from = from;
+      if (to) p.to = to;
       const d = await clio.get("/calendar_entries.json", p);
       return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, entries: d.data }, null, 2) }] };
     });
 
-  server.tool("clio_create_calendar_entry", "Create calendar entry (deadlines, hearings, reminders).",
-    { summary: z.string(), description: z.string().optional(), start_at: z.string().describe("YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS-04:00"), end_at: z.string().optional(), all_day: z.boolean().optional(), matter_id: z.number().optional(), location: z.string().optional(), reminder_minutes: z.number().optional().describe("1440=1day") },
-    async ({ summary, description, start_at, end_at, all_day, matter_id, location, reminder_minutes }) => {
-      const b = { data: { summary, description: description || "", start_at, end_at: end_at || start_at, all_day: all_day || false } };
+  // FIX #3: Added calendar_owner_id parameter (required by Clio API for creating entries)
+  server.tool("clio_create_calendar_entry", "Create calendar entry (deadlines, hearings, reminders). Requires calendar_owner_id from clio_list_calendars.",
+    { summary: z.string(), calendar_owner_id: z.number().describe("Calendar ID from clio_list_calendars (REQUIRED)"), description: z.string().optional(), start_at: z.string().describe("YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS-07:00"), end_at: z.string().optional(), all_day: z.boolean().optional(), matter_id: z.number().optional(), location: z.string().optional(), reminder_minutes: z.number().optional().describe("1440=1day") },
+    async ({ summary, calendar_owner_id, description, start_at, end_at, all_day, matter_id, location, reminder_minutes }) => {
+      const b = { data: { summary, description: description || "", start_at, end_at: end_at || start_at, all_day: all_day || false, calendar_owner: { id: calendar_owner_id } } };
       if (matter_id) b.data.matter = { id: matter_id };
       if (location) b.data.location = location;
       if (reminder_minutes) b.data.reminders = [{ minutes_before: reminder_minutes }];
