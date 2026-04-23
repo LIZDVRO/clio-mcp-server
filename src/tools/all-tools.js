@@ -98,7 +98,7 @@ export function registerAllTools(server) {
       return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, tasks: d.data }, null, 2) }] };
     });
 
-  // FIX #1: Added type: 'User' to assignee object (Clio API requires assignee_type)
+  // FIX #1: Added type: 'User' to assignee object
   server.tool("clio_create_task", "Create a task linked to a matter.",
     { name: z.string().describe("Task name"), matter_id: z.number(), description: z.string().optional(), due_at: z.string().optional().describe("YYYY-MM-DD"), priority: z.enum(["Low","Normal","High"]).optional(), assignee_id: z.number().optional().describe("User ID of the assignee") },
     async ({ name, matter_id, description, due_at, priority, assignee_id }) => {
@@ -116,11 +116,11 @@ export function registerAllTools(server) {
       return { content: [{ type: "text", text: "Task " + task_id + " completed." }] };
     });
 
-  // NEW TOOL: List available calendars to discover calendar IDs
+  // NEW TOOL: List available calendars to discover calendar IDs (FIX: Removed unsupported owner field)
   server.tool("clio_list_calendars", "List all available calendars (needed to get calendar_owner IDs for creating entries).",
     { limit: z.number().optional() },
     async ({ limit }) => {
-      const p = { fields: "id,name,color,light_color,owner{id,name}", limit: limit || 50 };
+      const p = { fields: "id,name,color,light_color", limit: limit || 50 };
       const d = await clio.get("/calendars.json", p);
       return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, calendars: d.data }, null, 2) }] };
     });
@@ -138,7 +138,7 @@ export function registerAllTools(server) {
       return { content: [{ type: "text", text: JSON.stringify({ total: d.meta?.records, entries: d.data }, null, 2) }] };
     });
 
-  // FIX #3: Added calendar_owner_id parameter (required by Clio API for creating entries)
+  // FIX #3: Added calendar_owner_id parameter
   server.tool("clio_create_calendar_entry", "Create calendar entry (deadlines, hearings, reminders). Requires calendar_owner_id from clio_list_calendars.",
     { summary: z.string(), calendar_owner_id: z.number().describe("Calendar ID from clio_list_calendars (REQUIRED)"), description: z.string().optional(), start_at: z.string().describe("YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS-07:00"), end_at: z.string().optional(), all_day: z.boolean().optional(), matter_id: z.number().optional(), location: z.string().optional(), reminder_minutes: z.number().optional().describe("1440=1day") },
     async ({ summary, calendar_owner_id, description, start_at, end_at, all_day, matter_id, location, reminder_minutes }) => {
